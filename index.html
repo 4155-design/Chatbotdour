@@ -15,15 +15,31 @@ textarea{flex:1;resize:none;min-height:48px;max-height:180px;background:transpar
 @media(max-width:550px){main{padding-top:12px}.welcome{padding:35px 4px 24px}.msg{max-width:95%}.composer{padding:10px}.composer-inner{border-radius:16px}button{padding:12px}}
 </style></head>
 <body>
-<header><div class="logo">D</div><div><div class="brand">DOUR AI</div><div class="tag">Dein KI-Assistent</div></div></header>
+<header><div class="logo">D</div><div style="flex:1"><div class="brand">DOUR AI</div><div class="tag">Dein KI-Assistent</div></div><button id="clear" type="button" style="background:#30283d;padding:10px 13px">Neuer Chat</button></header>
 <main><section class="welcome" id="welcome"><h1>Was kann ich für <span>dich</span> tun?</h1><p>Frage etwas, lass dir Code schreiben oder entwickle neue Ideen.</p></section><section id="chat" aria-live="polite"></section></main>
 <div class="composer"><div class="composer-inner"><select id="mode" aria-label="Chat-Modus" style="background:#211d2b;color:#f5f1fc;border:1px solid #30283d;border-radius:12px;padding:10px;max-width:112px"><option value="normal">Normal</option><option value="code">Coding</option></select><textarea id="prompt" placeholder="Schreibe eine Nachricht an DOUR AI…" rows="1"></textarea><button id="send">Senden</button></div><div class="hint">DOUR AI kann Fehler machen. Prüfe wichtige Informationen.</div></div>
 <script>
 const API_URL = "https://dour-ai-api-4155.onrender.com/api/chat";
 const promptBox=document.getElementById("prompt"),sendBtn=document.getElementById("send"),chat=document.getElementById("chat");
 let history=[];
+const STORAGE_KEY="dour-ai-chat-v1";
+function saveHistory(){try{localStorage.setItem(STORAGE_KEY,JSON.stringify(history.slice(-40)))}catch(e){}}
 function addMessage(role,text){document.getElementById("welcome").style.display="none";const el=document.createElement("div");el.className="msg "+role;const label=document.createElement("div");label.className="label";label.textContent=role==="user"?"DU":"DOUR AI";const body=document.createElement("div");body.textContent=text;el.append(label,body);chat.append(el);el.scrollIntoView({behavior:"smooth",block:"end"});return body}
-async function send(){const text=promptBox.value.trim();if(!text||sendBtn.disabled)return;promptBox.value="";addMessage("user",text);history.push({role:"user",content:text});const answer=addMessage("assistant","DOUR AI denkt nach …");sendBtn.disabled=true;
-try{const res=await fetch(API_URL,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({messages:history,mode:document.getElementById("mode").value})});const data=await res.json();if(!res.ok)throw new Error(data.error||"Serverfehler");const reply=data.reply||"Ich konnte keine Antwort erzeugen.";answer.textContent=reply;history.push({role:"assistant",content:reply})}catch(e){answer.textContent="Verbindungsfehler: "+e.message;answer.classList.add("error")}finally{sendBtn.disabled=false;promptBox.focus()}}
+function restoreHistory(){
+ try{
+  const saved=JSON.parse(localStorage.getItem(STORAGE_KEY)||"[]");
+  if(Array.isArray(saved)){
+   history=saved.filter(m=>m&&["user","assistant"].includes(m.role)&&typeof m.content==="string").slice(-40);
+   history.forEach(m=>addMessage(m.role,m.content));
+  }
+ }catch(e){history=[]}
+}
+restoreHistory();
+document.getElementById("clear").addEventListener("click",()=>{
+ if(!confirm("Möchtest du diesen Chat wirklich löschen?"))return;
+ history=[];localStorage.removeItem(STORAGE_KEY);chat.replaceChildren();document.getElementById("welcome").style.display="";
+});
+async function send(){const text=promptBox.value.trim();if(!text||sendBtn.disabled)return;promptBox.value="";addMessage("user",text);history.push({role:"user",content:text});saveHistory();const answer=addMessage("assistant","DOUR AI denkt nach …");sendBtn.disabled=true;
+try{const res=await fetch(API_URL,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({messages:history,mode:document.getElementById("mode").value})});const data=await res.json();if(!res.ok)throw new Error(data.error||"Serverfehler");const reply=data.reply||"Ich konnte keine Antwort erzeugen.";answer.textContent=reply;history.push({role:"assistant",content:reply});saveHistory()}catch(e){answer.textContent="Verbindungsfehler: "+e.message;answer.classList.add("error")}finally{sendBtn.disabled=false;promptBox.focus()}}
 sendBtn.addEventListener("click",send);promptBox.addEventListener("keydown",e=>{if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();send()}});promptBox.addEventListener("input",()=>{promptBox.style.height="auto";promptBox.style.height=Math.min(promptBox.scrollHeight,180)+"px"});
 </script></body></html>
