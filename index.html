@@ -1,167 +1,99 @@
 
 const http = require("http");
 
-const html = `<!DOCTYPE html>
-<html lang="de">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>DOUR AI</title>
-<style>
-*{box-sizing:border-box}
-body{margin:0;background:#101014;color:white;font-family:Arial;height:100vh;display:flex;flex-direction:column}
-header{padding:22px;text-align:center;background:#191820;font-size:26px;font-weight:bold}
-header span{color:#9870ff}
-#status{text-align:center;color:#aaa;padding:10px}
-#chat{flex:1;overflow:auto;padding:15px;display:flex;flex-direction:column;gap:12px}
-.msg{padding:14px;border-radius:14px;max-width:85%;white-space:pre-wrap;overflow-wrap:anywhere;line-height:1.5}
-.user{background:#7253dc;align-self:flex-end}
-.bot{background:#292630;align-self:flex-start}
-#bottom{display:flex;gap:8px;padding:12px;background:#191820}
-input{flex:1;min-width:0;padding:14px;border-radius:12px;border:1px solid #494451;background:#292630;color:white;font-size:16px}
-button{background:#8968ef;color:white;border:0;border-radius:12px;padding:12px}
-button:disabled{opacity:.5}
-</style>
-</head>
-<body>
-<header>✦ DOUR <span>AI</span></header>
-<div id="status">Bereit zum Chatten</div>
-<div id="chat">
-<div class="msg bot">Hallo! Ich bin DOUR AI. Was möchtest du wissen?</div>
-</div>
-<div id="bottom">
-<input id="input" placeholder="Schreibe DOUR AI...">
-<button id="send">Senden</button>
-</div>
-<script>
-const chat=document.getElementById("chat");
-const input=document.getElementById("input");
-const send=document.getElementById("send");
-const status=document.getElementById("status");
-const history=[];
+const PORT = process.env.PORT || 3000;
+const MODEL = "gpt-6-astra"; // Deinen Modellnamen beibehalten
 
-function add(text,type){
- const div=document.createElement("div");
- div.className="msg "+type;
- div.textContent=text;
- chat.appendChild(div);
- chat.scrollTop=chat.scrollHeight;
- return div;
-}
-
-async function ask(){
- const question=input.value.trim();
- if(!question||send.disabled)return;
- input.value="";
- add(question,"user");
- history.push({role:"user",content:question});
- const waiting=add("DOUR AI denkt nach ...","bot");
- send.disabled=true;
- status.textContent="KI antwortet ...";
-
- try{
-  const r=await fetch("/api/chat",{
-   method:"POST",
-   headers:{"Content-Type":"application/json"},
-   body:JSON.stringify({messages:history})
-  });
-  const data=await r.json();
-  if(!r.ok)throw new Error(data.error||"Serverfehler");
-  waiting.textContent=data.answer;
-  history.push({role:"assistant",content:data.answer});
- }catch(e){
-  waiting.textContent="Fehler: "+e.message;
-  history.pop();
- }
- send.disabled=false;
- status.textContent="Bereit";
- input.focus();
-}
-send.onclick=ask;
-input.onkeydown=e=>{if(e.key==="Enter")ask()};
-</script>
-</body>
-</html>`;
+const MODES = {
+  normal: "Du bist DOUR AI, ein intelligenter KI-Assistent. Antworte auf Deutsch, klar, freundlich und hilfreich.",
+  code: "Du bist DOUR AI Coding Expert. Schreibe sauberen, vollständigen, gut strukturierten Code. Erkläre Fehler und liefere Lösungen.",
+  creative: "Du bist DOUR AI Creative. Entwickle originelle Ideen, Konzepte, Texte und Projekte.",
+  learn: "Du bist DOUR AI Tutor. Erkläre schwierige Themen einfach und Schritt für Schritt."
+};
 
 const server = http.createServer(async (req, res) => {
-  res.setHeader("X-Content-Type-Options", "nosniff");
+  res.setHeader("Content-Type", "application/json; charset=utf-8");
+  res.setHeader("Access-Control-Allow-Origin", "*");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+  res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
 
-  if (req.method === "GET" && req.url === "/") {
-    res.writeHead(200, {"Content-Type":"text/html; charset=utf-8"});
-    return res.end(html);
+  if (req.method === "OPTIONS") {
+    res.writeHead(204);
+    return res.end();
   }
 
-  if (req.method === "POST" && req.url === "/api/chat") {
-    try {
-      if (!process.env.OPENAI_API_KEY) {
-        throw new Error("API-Schlüssel fehlt auf dem Server.");
-      }
+  if (req.method !== "POST" || req.url !== "/api/chat") {
+    res.writeHead(404);
+    return res.end(JSON.stringify({error:"Nicht gefunden"}));
+  }
 
-      let body = "";
-      for await (const chunk of req) {
-        body += chunk;
-        if (body.length > 50000) {
-          res.writeHead(413);
-          return res.end(JSON.stringify({error:"Nachricht zu lang"}));
-        }
-      }
-
-      const messages = JSON.parse(body).messages;
-      if (!Array.isArray(messages)) throw new Error("Ungültige Nachrichten");
-
-      const input = messages.slice(-20)
-        .filter(m =>
-          ["user","assistant"].includes(m.role) &&
-          typeof m.content === "string"
-        )
-        .map(m => ({
-          role:m.role,
-          content:m.content.slice(0,4000)
-        }));
-
-      const response = await fetch("https://api.openai.com/v1/responses", {
-        method:"POST",
-        headers:{
-          "Content-Type":"application/json",
-          "Authorization":"Bearer "+process.env.OPENAI_API_KEY
-        },
-        body:JSON.stringify({
-          model:"gpt-6-astra",
-          instructions:"Du bist DOUR AI. Antworte freundlich, verständlich und auf Deutsch. Hilf beim Programmieren und beantworte Fragen.",
-          input:input
-        })
-      });
-
-      const result = await response.json();
-
-      if (!response.ok) {
-        console.error(result);
-        throw new Error("OpenAI-API-Fehler. Prüfe Modellzugriff und API-Konto.");
-      }
-
-      const answer = (result.output || [])
-        .flatMap(item => item.content || [])
-        .filter(item => item.type === "output_text")
-        .map(item => item.text)
-        .join("\n");
-
-      res.writeHead(200, {"Content-Type":"application/json"});
-      return res.end(JSON.stringify({
-        answer:answer || "Keine Antwort erhalten."
-      }));
-
-    } catch (error) {
-      console.error(error);
-      res.writeHead(500, {"Content-Type":"application/json"});
-      return res.end(JSON.stringify({error:error.message}));
+  try {
+    if (!process.env.OPENAI_API_KEY) {
+      throw new Error("KI-Schlüssel fehlt auf dem Server.");
     }
-  }
 
-  res.writeHead(404);
-  res.end("Nicht gefunden");
+    let raw = "";
+    for await (const chunk of req) {
+      raw += chunk;
+      if (raw.length > 50000) throw new Error("Nachricht zu lang.");
+    }
+
+    const body = JSON.parse(raw);
+    const messages = body.messages;
+
+    if (!Array.isArray(messages)) {
+      throw new Error("Ungültige Nachrichten.");
+    }
+
+    const mode = MODES[body.mode] ? body.mode : "normal";
+
+    const input = messages.slice(-20).map(m => ({
+      role: m.role,
+      content: String(m.content).slice(0, 4000)
+    })).filter(m =>
+      ["user", "assistant"].includes(m.role)
+    );
+
+    const answer = await fetch(
+      "https://api.openai.com/v1/responses",
+      {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${process.env.OPENAI_API_KEY}`,
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          model: MODEL,
+          instructions: MODES[mode],
+          input
+        })
+      }
+    );
+
+    const data = await answer.json();
+
+    if (!answer.ok) {
+      throw new Error("KI-API-Fehler: " +
+        (data.error?.message || answer.status));
+    }
+
+    const result = (data.output || [])
+      .flatMap(x => x.content || [])
+      .filter(x => x.type === "output_text")
+      .map(x => x.text)
+      .join("\n");
+
+    res.writeHead(200);
+    res.end(JSON.stringify({
+      answer: result || "Keine Antwort erhalten."
+    }));
+
+  } catch (error) {
+    res.writeHead(500);
+    res.end(JSON.stringify({error:error.message}));
+  }
 });
 
-const port = process.env.PORT || 3000;
-server.listen(port, "0.0.0.0", () => {
-  console.log("DOUR AI läuft auf Port "+port);
+server.listen(PORT, "0.0.0.0", () => {
+  console.log("DOUR AI Server gestartet auf Port " + PORT);
 });
