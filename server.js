@@ -1,47 +1,92 @@
-const http = require("http");
-const PORT = process.env.PORT || 3000;
+const http = require("node:http");
+
+const PORT = Number(process.env.PORT || 3000);
 const MODEL = process.env.OPENAI_MODEL || "gpt-6-astra";
-const SYSTEM = "Du bist DOUR AI, ein hilfreicher KI-Assistent. Antworte standardmäßig auf Deutsch. Schreibe auf Wunsch vollständigen, gut erklärten Code. Sei freundlich, klar und ehrlich.";
+
+const MODES = {
+  normal: "Du bist DOUR AI, ein intelligenter KI-Assistent. Antworte auf Deutsch, klar, freundlich und hilfreich.",
+  code: "Du bist DOUR AI Coding Expert. Erkläre Programmierung Schritt für Schritt, schreibe korrekten und gut kommentierten Code und hilf beim Finden von Fehlern."
+};
+
+function send(res, status, data) {
+  res.writeHead(status, {
+    "Content-Type": "application/json; charset=utf-8",
+    "Access-Control-Allow-Origin": process.env.ALLOWED_ORIGIN || "*",
+    "Access-Control-Allow-Headers": "Content-Type",
+    "Access-Control-Allow-Methods": "POST, GET, OPTIONS"
+  });
+  res.end(JSON.stringify(data));
+}
 
 const server = http.createServer(async (req, res) => {
-  res.setHeader("Access-Control-Allow-Origin", process.env.ALLOWED_ORIGIN || "*");
-  res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
-  res.setHeader("Access-Control-Allow-Headers", "Content-Type");
-  if (req.method === "OPTIONS") { res.writeHead(204); return res.end(); }
+  if (req.method === "OPTIONS") return send(res, 204, {});
   if (req.method === "GET" && req.url === "/health") {
-    res.writeHead(200, {"Content-Type":"application/json"});
-    return res.end(JSON.stringify({ok:true, service:"DOUR AI API"}));
+    return send(res, 200, { ok: true, service: "DOUR AI API" });
   }
   if (req.method !== "POST" || req.url !== "/api/chat") {
-    res.writeHead(404, {"Content-Type":"application/json"}); return res.end(JSON.stringify({error:"Nicht gefunden"}));
+    return send(res, 404, { error: "Nicht gefunden." });
   }
   if (!process.env.OPENAI_API_KEY) {
-    res.writeHead(500, {"Content-Type":"application/json"}); return res.end(JSON.stringify({error:"OPENAI_API_KEY fehlt in den Render-Umgebungsvariablen."}));
+    return send(res, 500, { error: "Der KI-Schlüssel fehlt auf dem Server. Bitte OPENAI_API_KEY in Render als geheime Umgebungsvariable einrichten." });
   }
-  let raw = "";
-  req.on("data", chunk => { raw += chunk; if (raw.length > 1e6) req.destroy(); });
-  req.on("end", async () => {
-    try {
-      const body = JSON.parse(raw || "{}");
-      const messages = Array.isArray(body.messages) ? body.messages.slice(-20) : [];
-      const input = [{role:"system",content:SYSTEM}, ...messages.map(m => ({role:m.role === "assistant" ? "assistant" : "user", content:String(m.content || "").slice(0,12000)}))];
-      const api = await fetch("https://api.openai.com/v1/responses", {
-        method:"POST",
-        headers:{"Authorization":"Bearer "+process.env.OPENAI_API_KEY,"Content-Type":"application/json"},
-        body:JSON.stringify({model:MODEL,input})
-      });
-      const data = await api.json();
-      if (!api.ok) {
-        res.writeHead(api.status, {"Content-Type":"application/json"});
-        return res.end(JSON.stringify({error:data.error?.message || "OpenAI API Fehler"}));
-      }
-      const reply = data.output_text || (data.output || []).flatMap(x => x.content || []).filter(x => x.type === "output_text").map(x => x.text).join("\n") || "Keine Antwort erhalten.";
-      res.writeHead(200, {"Content-Type":"application/json"});
-      res.end(JSON.stringify({reply}));
-    } catch (err) {
-      res.writeHead(400, {"Content-Type":"application/json"});
-      res.end(JSON.stringify({error:err.message || "Ungültige Anfrage"}));
+
+  try {
+    let raw = "";
+    for await (const chunk of req) {
+      raw += chunk;
+      if (raw.length > 50000) return send(res, 413, { error: "Nachricht zu lang." });
     }
-  });
+
+    const body = JSON.parse(raw || "{}");
+    if (!Array.isArray(body.messages)) {
+      return send(res, 400, { error: "Ungültige Nachrichten." });
+    }
+
+    const mode = MODES[body.mode] ? body.mode : "normal";
+    const input = body.messages
+      .slice(-20)
+      .filter(m => m && ["user", "assistant"].includes(m.role))
+      .map(m => ({
+        role: m.role,
+        content: String(m.content || "").slice(0, 4000)
+      }));
+
+    if (!input.length || input[input.length - 1].role !== "user") {
+      return send(res, 400, { error: "Bitte schreibe zuerst eine Nachricht." });
+    }
+
+    const response = await fetch("https://api.openai.com/v1/responses", {
+      method: "POST",
+      headers: {
+        "Authorization": "Bearer " + process.env.OPENAI_API_KEY,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        model: MODEL,
+        instructions: MODES[mode],
+        input
+      })
+    });
+
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      return send(res, response.status, {
+        error: data.error?.message || "KI-API-Fehler: " + response.status
+      });
+    }
+
+    const reply = data.output_text || (data.output || [])
+      .flatMap(item => item.content || [])
+      .filter(item => item.type === "output_text")
+      .map(item => item.text)
+      .join("\n");
+
+    return send(res, 200, { reply: reply || "Keine Antwort erhalten." });
+  } catch (error) {
+    return send(res, 500, { error: error.message || "Serverfehler." });
+  }
 });
-server.listen(PORT, () => console.log("DOUR AI API läuft auf Port " + PORT));
+
+server.listen(PORT, "0.0.0.0", () => {
+  console.log("DOUR AI Server gestartet auf Port " + PORT);
+});
