@@ -1,99 +1,29 @@
-
-const http = require("http");
-
-const PORT = process.env.PORT || 3000;
-const MODEL = "gpt-6-astra"; // Deinen Modellnamen beibehalten
-
-const MODES = {
-  normal: "Du bist DOUR AI, ein intelligenter KI-Assistent. Antworte auf Deutsch, klar, freundlich und hilfreich.",
-  code: "Du bist DOUR AI Coding Expert. Schreibe sauberen, vollständigen, gut strukturierten Code. Erkläre Fehler und liefere Lösungen.",
-  creative: "Du bist DOUR AI Creative. Entwickle originelle Ideen, Konzepte, Texte und Projekte.",
-  learn: "Du bist DOUR AI Tutor. Erkläre schwierige Themen einfach und Schritt für Schritt."
-};
-
-const server = http.createServer(async (req, res) => {
-  res.setHeader("Content-Type", "application/json; charset=utf-8");
-  res.setHeader("Access-Control-Allow-Origin", "*");
-  res.setHeader("Access-Control-Allow-Headers", "Content-Type");
-  res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
-
-  if (req.method === "OPTIONS") {
-    res.writeHead(204);
-    return res.end();
-  }
-
-  if (req.method !== "POST" || req.url !== "/api/chat") {
-    res.writeHead(404);
-    return res.end(JSON.stringify({error:"Nicht gefunden"}));
-  }
-
-  try {
-    if (!process.env.OPENAI_API_KEY) {
-      throw new Error("KI-Schlüssel fehlt auf dem Server.");
-    }
-
-    let raw = "";
-    for await (const chunk of req) {
-      raw += chunk;
-      if (raw.length > 50000) throw new Error("Nachricht zu lang.");
-    }
-
-    const body = JSON.parse(raw);
-    const messages = body.messages;
-
-    if (!Array.isArray(messages)) {
-      throw new Error("Ungültige Nachrichten.");
-    }
-
-    const mode = MODES[body.mode] ? body.mode : "normal";
-
-    const input = messages.slice(-20).map(m => ({
-      role: m.role,
-      content: String(m.content).slice(0, 4000)
-    })).filter(m =>
-      ["user", "assistant"].includes(m.role)
-    );
-
-    const answer = await fetch(
-      "https://api.openai.com/v1/responses",
-      {
-        method: "POST",
-        headers: {
-          "Authorization": `Bearer ${process.env.OPENAI_API_KEY}`,
-          "Content-Type": "application/json"
-        },
-        body: JSON.stringify({
-          model: MODEL,
-          instructions: MODES[mode],
-          input
-        })
-      }
-    );
-
-    const data = await answer.json();
-
-    if (!answer.ok) {
-      throw new Error("KI-API-Fehler: " +
-        (data.error?.message || answer.status));
-    }
-
-    const result = (data.output || [])
-      .flatMap(x => x.content || [])
-      .filter(x => x.type === "output_text")
-      .map(x => x.text)
-      .join("\n");
-
-    res.writeHead(200);
-    res.end(JSON.stringify({
-      answer: result || "Keine Antwort erhalten."
-    }));
-
-  } catch (error) {
-    res.writeHead(500);
-    res.end(JSON.stringify({error:error.message}));
-  }
-});
-
-server.listen(PORT, "0.0.0.0", () => {
-  console.log("DOUR AI Server gestartet auf Port " + PORT);
-});
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>DOUR AI</title>
+<style>
+:root{color-scheme:dark;--bg:#0c0b10;--panel:#17141f;--line:#30283d;--purple:#9565e8;--text:#f5f1fc;--muted:#aaa1b8}
+*{box-sizing:border-box}body{margin:0;background:radial-gradient(circle at 50% -20%,#33204f 0,transparent 42%),var(--bg);color:var(--text);font:16px system-ui,-apple-system,Segoe UI,sans-serif;min-height:100vh}
+header{height:68px;border-bottom:1px solid var(--line);display:flex;align-items:center;padding:0 20px;gap:12px;background:#100e16cc;position:sticky;top:0}
+.logo{width:36px;height:36px;border-radius:12px;background:linear-gradient(135deg,#b18aff,#6940b4);display:grid;place-items:center;font-weight:900;color:white}.brand{font-weight:800;letter-spacing:1.5px}.tag{color:var(--muted);font-size:12px}
+main{max-width:900px;margin:auto;padding:34px 18px 130px}.welcome{text-align:center;padding:48px 10px 30px}.welcome h1{font-size:clamp(32px,7vw,54px);margin:0 0 10px}.welcome h1 span{color:#b58cff}.welcome p{color:var(--muted);margin:0}
+#chat{display:flex;flex-direction:column;gap:16px}.msg{max-width:88%;padding:15px 17px;border:1px solid var(--line);border-radius:18px;line-height:1.55;white-space:pre-wrap;overflow-wrap:anywhere}.user{align-self:flex-end;background:#38265a;border-color:#65469a}.assistant{align-self:flex-start;background:var(--panel)}.label{font-size:11px;color:#c5a9ff;margin-bottom:6px;font-weight:700;letter-spacing:.6px}
+.composer{position:fixed;bottom:0;left:0;right:0;padding:16px;background:linear-gradient(transparent,#0c0b10 20%);}.composer-inner{max-width:900px;margin:auto;background:var(--panel);border:1px solid var(--line);border-radius:20px;padding:10px;display:flex;gap:10px;align-items:flex-end;box-shadow:0 10px 45px #0008}
+textarea{flex:1;resize:none;min-height:48px;max-height:180px;background:transparent;border:0;outline:0;color:var(--text);font:inherit;padding:12px}button{border:0;border-radius:14px;background:var(--purple);color:white;font-weight:700;padding:13px 18px;cursor:pointer}button:disabled{opacity:.5;cursor:wait}.hint{text-align:center;color:var(--muted);font-size:11px;margin-top:8px}.error{color:#ffaaaa}
+@media(max-width:550px){main{padding-top:12px}.welcome{padding:35px 4px 24px}.msg{max-width:95%}.composer{padding:10px}.composer-inner{border-radius:16px}button{padding:12px}}
+</style></head>
+<body>
+<header><div class="logo">D</div><div><div class="brand">DOUR AI</div><div class="tag">Dein KI-Assistent</div></div></header>
+<main><section class="welcome" id="welcome"><h1>Was kann ich für <span>dich</span> tun?</h1><p>Frage etwas, lass dir Code schreiben oder entwickle neue Ideen.</p></section><section id="chat" aria-live="polite"></section></main>
+<div class="composer"><div class="composer-inner"><textarea id="prompt" placeholder="Schreibe eine Nachricht an DOUR AI…" rows="1"></textarea><button id="send">Senden</button></div><div class="hint">DOUR AI kann Fehler machen. Prüfe wichtige Informationen.</div></div>
+<script>
+const API_URL = "https://DEIN-RENDER-DIENST.onrender.com/api/chat";
+const promptBox=document.getElementById("prompt"),sendBtn=document.getElementById("send"),chat=document.getElementById("chat");
+let history=[];
+function addMessage(role,text){document.getElementById("welcome").style.display="none";const el=document.createElement("div");el.className="msg "+role;const label=document.createElement("div");label.className="label";label.textContent=role==="user"?"DU":"DOUR AI";const body=document.createElement("div");body.textContent=text;el.append(label,body);chat.append(el);el.scrollIntoView({behavior:"smooth",block:"end"});return body}
+async function send(){const text=promptBox.value.trim();if(!text||sendBtn.disabled)return;promptBox.value="";addMessage("user",text);history.push({role:"user",content:text});const answer=addMessage("assistant","DOUR AI denkt nach …");sendBtn.disabled=true;
+try{if(API_URL.includes("DEIN-RENDER-DIENST"))throw new Error("Der Server-Link fehlt noch. Nach dem Render-Start muss hier deine Render-Adresse eingetragen werden.");const res=await fetch(API_URL,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({messages:history})});const data=await res.json();if(!res.ok)throw new Error(data.error||"Serverfehler");const reply=data.reply||"Ich konnte keine Antwort erzeugen.";answer.textContent=reply;history.push({role:"assistant",content:reply})}catch(e){answer.textContent="Verbindungsfehler: "+e.message;answer.classList.add("error")}finally{sendBtn.disabled=false;promptBox.focus()}}
+sendBtn.addEventListener("click",send);promptBox.addEventListener("keydown",e=>{if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();send()}});promptBox.addEventListener("input",()=>{promptBox.style.height="auto";promptBox.style.height=Math.min(promptBox.scrollHeight,180)+"px"});
+</script></body></html>
