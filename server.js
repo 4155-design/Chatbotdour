@@ -8,6 +8,10 @@ const server = http.createServer(async (req, res) => {
   res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type");
   if (req.method === "OPTIONS") { res.writeHead(204); return res.end(); }
+  if (req.method === "GET" && req.url === "/health") {
+    res.writeHead(200, {"Content-Type":"application/json"});
+    return res.end(JSON.stringify({ok:true, service:"DOUR AI API"}));
+  }
   if (req.method !== "POST" || req.url !== "/api/chat") {
     res.writeHead(404, {"Content-Type":"application/json"}); return res.end(JSON.stringify({error:"Nicht gefunden"}));
   }
