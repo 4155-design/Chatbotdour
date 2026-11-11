@@ -19,7 +19,7 @@ textarea{flex:1;resize:none;min-height:48px;max-height:180px;background:transpar
 <main><section class="welcome" id="welcome"><h1>Was kann ich für <span>dich</span> tun?</h1><p>Frage etwas, lass dir Code schreiben oder entwickle neue Ideen.</p></section><section id="chat" aria-live="polite"></section></main>
 <div class="composer"><div class="composer-inner"><select id="mode" aria-label="Chat-Modus" style="background:#211d2b;color:#f5f1fc;border:1px solid #30283d;border-radius:12px;padding:10px;max-width:112px"><option value="normal">Normal</option><option value="code">Coding</option></select><textarea id="prompt" placeholder="Schreibe eine Nachricht an DOUR AI…" rows="1"></textarea><button id="send">Senden</button></div><div class="hint">DOUR AI kann Fehler machen. Prüfe wichtige Informationen.</div></div>
 <script>
-const API_URL = "https://dour-ai-api-4155.onrender.com/api/chat";
+const API_URL = "https://chatbotdour.onrender.com/api/chat";
 const promptBox=document.getElementById("prompt"),sendBtn=document.getElementById("send"),chat=document.getElementById("chat");
 let history=[];
 const STORAGE_KEY="dour-ai-chat-v1";
